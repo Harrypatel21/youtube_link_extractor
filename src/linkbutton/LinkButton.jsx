@@ -1,27 +1,53 @@
 import React, { useState } from 'react';
 
+// New function to send data to our Google Apps Script
+async function sendToGoogleSheet(data) {
+    // !!! IMPORTANT: Paste your own Google Apps Script Web App URL here !!!
+    const webAppUrl = 'https://script.google.com/macros/s/AKfycbyMjckNkRku9eon8T82d2KVKWb-oo0z4zlgjksMwJJvwu4ZOKwLMHYP88-GE5iHYaia/exec'; 
+
+    try {
+        const response = await fetch(webAppUrl, {
+            method: 'POST',
+            mode: 'no-cors', // Important for sending from a browser to Apps Script
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data),
+        });
+        console.log("Successfully sent data to Google Sheet.");
+        return true;
+    } catch (error) {
+        console.error('Error sending data to Google Sheet:', error);
+        return false;
+    }
+}
+
+
 function LinkButton() {
-    const [urls, setUrls] = useState([]);
     const [isExtracting, setIsExtracting] = useState(false);
+    const [message, setMessage] = useState('Get Links');
+
 
     function extractLinksFromYouTube() {
         setIsExtracting(true);
+        setMessage('Extracting...');
 
-        const allLinks = [];
+        // 1. Get the Channel Name
+        const channelNameElement = document.querySelector('yt-formatted-string#text.ytd-channel-name');
+        const channelName = channelNameElement ? channelNameElement.textContent.trim() : 'Unknown Channel';
+
+        // 2. Extract all links
         const linkElements = document.querySelectorAll('yt-channel-external-link-view-model');
+        const allLinks = [];
 
         linkElements.forEach(element => {
             const linkAnchor = element.querySelector('a');
-            const titleElement = element.querySelector('.yt-channel-external-link-view-model-wiz__title');
-
             if (linkAnchor && linkAnchor.href) {
                 let finalUrl = linkAnchor.href;
-                const linkText = titleElement ? titleElement.textContent.trim() : 'No text';
-
                 if (finalUrl.includes('googleusercontent.com/youtube.com/')) {
                     try {
                         const url = new URL(finalUrl);
-                        const redirectUrl = url.search_params.get('q');
+                        const redirectUrl = url.searchParams.get('q');
                         if (redirectUrl) {
                             finalUrl = decodeURIComponent(redirectUrl);
                         }
@@ -29,31 +55,35 @@ function LinkButton() {
                         console.warn('Error parsing redirect URL:', error);
                     }
                 }
-
-                allLinks.push({ url: finalUrl, text: linkText });
+                allLinks.push(finalUrl);
             }
         });
+        
+        // 3. Organize the data to match Google Sheet columns
+        const sheetData = {
+            channelName: channelName,
+            youtube: window.location.href, // The current channel URL
+            instagram: allLinks.find(link => link.includes('instagram.com')) || '',
+            twitter: allLinks.find(link => link.includes('twitter.com') || link.includes('x.com')) || '',
+            linkedin: allLinks.find(link => link.includes('linkedin.com')) || '',
+            email: allLinks.find(link => link.startsWith('mailto:')) || ''
+        };
+        
+        console.log("Organized Data:", sheetData);
 
-        const uniqueLinks = allLinks.filter((link, index, self) =>
-            index === self.findIndex(l => l.url === link.url)
-        );
-
-        setUrls(uniqueLinks);
-        console.log("Extracted links:", uniqueLinks);
-
-        if (uniqueLinks.length > 0) {
-            const linkText = uniqueLinks.map(link => `${link.text}: ${link.url}`).join('\n');
-            navigator.clipboard.writeText(linkText).then(() => {
-                showNotification(`Copied ${uniqueLinks.length} links to clipboard`);
-            }).catch(err => {
-                console.error('Failed to copy links:', err);
-                showNotification('Could not copy links to clipboard.');
-            });
-        } else {
-            showNotification('No links found.');
-        }
-
-        setIsExtracting(false);
+        // 4. Send the data to the Google Sheet
+        sendToGoogleSheet(sheetData).then(success => {
+            if (success) {
+                showNotification(`Links for ${channelName} sent to Google Sheet!`);
+                setMessage('Sent!');
+            } else {
+                showNotification('Error: Failed to send links.');
+                setMessage('Error!');
+            }
+            setIsExtracting(false);
+            // Reset button text after a delay
+            setTimeout(() => setMessage('Get Links'), 2000);
+        });
     }
     
     function showNotification(message) {
@@ -77,15 +107,10 @@ function LinkButton() {
 
         setTimeout(() => {
             notification.style.opacity = '0';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    notification.remove();
-                }
-            }, 500);
+            setTimeout(() => notification.remove(), 500);
         }, 3000);
     }
 
-    // The root element no longer needs custom styling, as the parent flex wrapper handles positioning.
     return React.createElement('div', null, 
         React.createElement('button',
             {
@@ -93,7 +118,7 @@ function LinkButton() {
                 onClick: extractLinksFromYouTube,
                 disabled: isExtracting
             },
-            isExtracting ? 'Extracting...' : `Get Links ${urls.length > 0 ? `(${urls.length})` : ''}`
+            message
         )
     );
 }
