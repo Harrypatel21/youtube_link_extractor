@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "Youtube link extractor",
+  "version": "1.0.0",
+  "description": "Chrome extension for extracting links from youtube.",
+  "permissions": ["storage", "activeTab"],
+  "action": {
+    "default_popup": "index.html"
+  },
+  "content_scripts": [
+    {
+      "js": ["src/content.jsx"],
+      "matches": ["https://www.youtube.com/*"],
+      "run_at": "document_end"
+    }
+  ],
+  "background": {
+    "service_worker": "src/background.js"
+  }
+}
